@@ -36,6 +36,12 @@
 
 * [kdtree算法-博客园](https://www.cnblogs.com/eyeszjwang/articles/2429382.html)
 
+* [Precomputed matrix for fitting with scikit neighbors/radius classification](https://stackoverflow.com/questions/40998306/precomputed-matrix-for-fitting-with-scikit-neighbors-radius-classification): Tells why sklearn's NearestNeighbor optionally accepts precomputed distance matrix.
+
+* [医学影像分割---Dice Loss - 知乎](https://zhuanlan.zhihu.com/p/86704421)
+
+* [willard-yuan/cnn-cbir-benchmark - github](https://github.com/willard-yuan/cnn-cbir-benchmark): CBIR benchmark including  SIFT retrieval and some improvements.
+
 
 ## Dev Notes
 
@@ -118,8 +124,9 @@ error: OpenCV(3.4.2) /tmp/build/80754af9/opencv-suite_1535558553474/work/modules
 
 ## TODO
 
+
+1. switch to multiple image bf matcher. see example here [BFMatcher match in OpenCV throwing error](https://stackoverflow.com/a/39946169)  
 1. other way to compute similarity (especially asymmetric ones, e.g. KL-divergence)
-1. test tfidf feature
 2. vocabulary tree
 2. use cv2 FLANN to replace sklearn KNN. See an example [here](https://docs.opencv.org/master/d1/de0/tutorial_py_feature_homography.html)
 3. inverted index

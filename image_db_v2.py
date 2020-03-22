@@ -23,7 +23,7 @@ import logging
 from utils import read_and_crop
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
 
 SEED=10086
@@ -156,7 +156,7 @@ class ImageDB:
         return similar_imgs
     
     
-    def retrieve_and_locate(self, query_im_path, query_bb_path, top_k=10, match_num_for_hom=20):
+    def retrieve_and_locate(self, query_im_path, query_bb_path, top_k=10, match_num_for_hom=20, locate=True):
         if top_k is None:
             top_k = self.top_k
             
@@ -171,6 +171,7 @@ class ImageDB:
         img_fea = np.expand_dims(self._compute_im_bow(des_mat_cat), axis=0)
         if self.im_fea_name == 'tfidf':
             img_fea = self.tfidf_transformer.transform(img_fea)
+        logging.debug('type(img_fea): {:s}'.format(str(type(img_fea))))
             
          # search similar images
         dists, inds = self.knn.kneighbors(img_fea, top_k, return_distance=True)
@@ -179,73 +180,77 @@ class ImageDB:
             similar_im_path = os.path.join(self.im_dir, self.im_name_list[im_idx])
             similar_imgs.append((similar_im_path, dists[0][cnt]))
             
-        
-        result = OrderedDict()
-        result['query_img'] = (query_im_path, 0.0, query_bbs)
-        # locate objects in similar images
-        # shouldn't use cv2.NORM_HAMMING for SIFT matching
-        # bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
-        for idx, (img_sim_path, score) in enumerate(similar_imgs):
-            bbs = []
-            img_sim = cv2.imread(img_sim_path)
-            # kp, des in retrieved image
-            kp_sim, des_sim = self._compute_pt_fea(img_sim)
-#             # kp, des in query image
-#             kp_obj = []
-#             for kp, des in kp_des_list:
-#                 kp_obj += kp
-#             des_obj = des_mat_cat
-#             logging.debug('des_obj.shape: {:s}'.format(str(des_obj.shape)))
-#             logging.debug('des_sim.shape: {:s}'.format(str(des_sim.shape)))
-            
-#             # match key point
-#             matches = bf.match(des_obj, des_sim)
-#             matches = sorted(matches, key = lambda x:x.distance)
-            
-#             # only use good matches for homography estimation
-#             match_num = len(matches)
-#             if match_num < match_num_for_hom:
-#                 logging.warn('Only {:d} matches have been found, lower than match_num_for_hom {:d} you set.'.format(match_num , match_num_for_hom))
-#                 match_num_for_hom = match_num 
-#             good_matches = matches[:match_num_for_hom]
-            
-#             # estimate homography matrix
-#             src_pts = np.float32([ kp_obj[m.queryIdx].pt for m in good_matches ]).reshape(-1,1,2)
-#             dst_pts = np.float32([ kp_sim[m.trainIdx].pt for m in good_matches ]).reshape(-1,1,2)
-#             M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-            
-#             for i in range(len(cropped_patches)):
-            for i, (kp_obj, des_obj) in enumerate(kp_des_list):
-                logging.debug('des_obj.shape: {:s}'.format(str(des_obj.shape)))
-                logging.debug('des_sim.shape: {:s}'.format(str(des_sim.shape)))
-                # match key point
-                matches = bf.match(des_obj, des_sim)
-                matches = sorted(matches, key = lambda x:x.distance)
-                # only use good matches for homography estimation
-                match_num = len(matches)
-                if match_num < match_num_for_hom:
-                    logging.warn('Only {:d} matches have been found, lower than match_num_for_hom {:d} you set.'.format(match_num , match_num_for_hom))
-                    match_num_for_hom = match_num 
-                good_matches = matches[:match_num_for_hom]
-                # estimate homography matrix
-                src_pts = np.float32([ kp_obj[m.queryIdx].pt for m in good_matches ]).reshape(-1,1,2)
-                dst_pts = np.float32([ kp_sim[m.trainIdx].pt for m in good_matches ]).reshape(-1,1,2)
-                M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-                # homograpy wrapping for corner points
-                h, w = cropped_patches[i].shape[:2]
-                src_corners = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
-                dst_corners = cv2.perspectiveTransform(src_corners, M)
-                bbs.append(dst_corners)
-                
-            key = 'top {:d} similar'.format(idx) 
-            result[key] = (img_sim_path, score, bbs)
-            
-        return result
+        if locate:
+            result = OrderedDict()
+            result['query_img'] = (query_im_path, 0.0, query_bbs)
+            # locate objects in similar images
+            # shouldn't use cv2.NORM_HAMMING for SIFT matching
+            # bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+            if self.pt_fea_name in ['sift', 'surf']:
+                norm = cv2.NORM_L2
+            else: # ORB, BRIEF, BRISK
+                norm = cv2.NORM_HAMMING
+            bf = cv2.BFMatcher(norm, crossCheck=True)
+            for idx, (img_sim_path, score) in enumerate(similar_imgs):
+                bbs = []
+                img_sim = cv2.imread(img_sim_path)
+                # kp, des in retrieved image
+                kp_sim, des_sim = self._compute_pt_fea(img_sim)
+    #             # kp, des in query image
+    #             kp_obj = []
+    #             for kp, des in kp_des_list:
+    #                 kp_obj += kp
+    #             des_obj = des_mat_cat
+    #             logging.debug('des_obj.shape: {:s}'.format(str(des_obj.shape)))
+    #             logging.debug('des_sim.shape: {:s}'.format(str(des_sim.shape)))
+
+    #             # match key point
+    #             matches = bf.match(des_obj, des_sim)
+    #             matches = sorted(matches, key = lambda x:x.distance)
+
+    #             # only use good matches for homography estimation
+    #             match_num = len(matches)
+    #             if match_num < match_num_for_hom:
+    #                 logging.warn('Only {:d} matches have been found, lower than match_num_for_hom {:d} you set.'.format(match_num , match_num_for_hom))
+    #                 match_num_for_hom = match_num 
+    #             good_matches = matches[:match_num_for_hom]
+
+    #             # estimate homography matrix
+    #             src_pts = np.float32([ kp_obj[m.queryIdx].pt for m in good_matches ]).reshape(-1,1,2)
+    #             dst_pts = np.float32([ kp_sim[m.trainIdx].pt for m in good_matches ]).reshape(-1,1,2)
+    #             M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+
+    #             for i in range(len(cropped_patches)):
+                for i, (kp_obj, des_obj) in enumerate(kp_des_list):
+                    logging.debug('des_obj.shape: {:s}'.format(str(des_obj.shape)))
+                    logging.debug('des_sim.shape: {:s}'.format(str(des_sim.shape)))
+                    # match key point
+                    matches = bf.match(des_obj, des_sim)
+                    matches = sorted(matches, key = lambda x:x.distance)
+                    # only use good matches for homography estimation
+                    match_num = len(matches)
+                    if match_num < match_num_for_hom:
+                        logging.warn('Only {:d} matches have been found, lower than match_num_for_hom {:d} you set.'.format(match_num , match_num_for_hom))
+                        match_num_for_hom = match_num 
+                    good_matches = matches[:match_num_for_hom]
+                    # estimate homography matrix
+                    src_pts = np.float32([ kp_obj[m.queryIdx].pt for m in good_matches ]).reshape(-1,1,2)
+                    dst_pts = np.float32([ kp_sim[m.trainIdx].pt for m in good_matches ]).reshape(-1,1,2)
+                    M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+                    # homograpy wrapping for corner points
+                    h, w = cropped_patches[i].shape[:2]
+                    src_corners = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
+                    dst_corners = cv2.perspectiveTransform(src_corners, M)
+                    bbs.append(dst_corners)
+
+                key = 'top {:d} similar'.format(idx) 
+                result[key] = (img_sim_path, score, bbs)
+            return result
+        return similar_imgs
     
     
     def migrate_to_tfidf(self):
-        assert self.im_fea_name == 'bow',\
+        assert self.im_fea_name in ['bow', 'tfidf'], \
                'current image-level feature is {:s}'.format(self.im_fea_name)
         self.im_fea_name = 'tfidf'
         
@@ -262,6 +267,21 @@ class ImageDB:
         logging.info('Building Finished!')
 
     
+    def switch_sim_metric(self, metric):
+        '''
+        switch similarity metric for image retrieval
+        args:
+            metric: string or callable
+        '''
+        self.metric = metric
+        logging.info('Rebuilding KNN for image retrieval...')
+        # to search most similar images, here we use sklearn's KNN
+        self.knn = neighbors.NearestNeighbors(n_neighbors=self.top_k,
+                                              n_jobs=self.n_jobs,
+                                              metric=self.metric)
+        self.knn.fit(self.im_fea_mat)
+        logging.info('Building Finished!')
+        
     
     def _compute_pt_fea(self, im_bgr):
         '''
